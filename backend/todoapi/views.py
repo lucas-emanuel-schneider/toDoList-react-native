@@ -1,19 +1,19 @@
 from rest_framework.response import Response
 from rest_framework.decorators import api_view
 from rest_framework import status
-from .serializers import TaskSerializer
+from .serializers import TaskSerializer, UserSerializer
 from .models import Task
 from django.http import JsonResponse
 import json
 from django.middleware.csrf import get_token
 from django.contrib.auth import authenticate, login
-from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.csrf import csrf_exempt
 
 
-@ensure_csrf_cookie
+@api_view(['GET'])
 def get_csrf_token(request):
-    return JsonResponse({'detail': 'CSRF cookie set'})
+    token = get_token(request)
+    return JsonResponse({'X-CSRFToken': token})
 
 
 @csrf_exempt
@@ -31,18 +31,36 @@ def loginUser(request):
 
             if user is not None:
                 login(request, user)
-                return JsonResponse({'token': get_token(request)})
+                return JsonResponse({'X-CSRFToken': get_token(request)})
             else:
                 return JsonResponse({'error': 'Invalid username or password'})
         else:
             return JsonResponse({'error': 'Missing username or password'})
 
 
+@api_view(['POST'])
+def createUser(request):
+    serialized_user = UserSerializer(data=request.data)
+    if serialized_user.is_valid():
+        serialized_user.save()
+        token = get_token(request)
+        return Response({'X-CSRFToken': token}, status=status.HTTP_201_CREATED)
+    return Response(serialized_user.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['POST'])
+def logoutUser(request):
+    if request.method == 'POST':
+        request.session.flush()
+        return Response(status=status.HTTP_200_OK)
+
+
 @api_view(['GET'])
 def taskList(request):
     tasks = Task.objects.all()
     if not tasks:
-        return Response(status=status.HTTP_404_NOT_FOUND)
+        return Response({'message': 'No tasks found'},
+                        status=status.HTTP_404_NOT_FOUND)
     serialized_tasks = TaskSerializer(tasks, many=True)
     return Response(serialized_tasks.data, status=status.HTTP_200_OK)
 
